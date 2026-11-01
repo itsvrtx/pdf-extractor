@@ -1,0 +1,317 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>PDF Extractor</title>
+<!-- Same .ico as the desktop build: served by the backend from assets/app.ico -->
+<link rel="icon" href="/favicon.ico">
+<style>
+  :root {
+    --bg1:#0b1020; --bg2:#1a1240; --card:rgba(255,255,255,.06); --line:rgba(255,255,255,.12);
+    --text:#eef0f8; --muted:#9aa3c0; --accent:#7c8cff; --accent2:#b07cff; --warn:#f59e0b; --ok:#34d399; --err:#f87171;
+  }
+  @media (prefers-color-scheme: light) {
+    :root:not([data-theme="dark"]) { --bg1:#eef1ff; --bg2:#f7f0ff; --card:rgba(255,255,255,.7); --line:rgba(20,20,60,.12);
+      --text:#161a33; --muted:#566; --accent:#4f5bff; --accent2:#8b4fff; }
+  }
+  * { box-sizing:border-box; }
+  html { background:var(--bg1); }
+  body { margin:0; min-height:100vh; color:var(--text); font:15px/1.5 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
+    background:radial-gradient(1000px 600px at 15% -10%, var(--bg2), transparent 60%), var(--bg1); }
+  main { max-width:860px; margin:0 auto; padding:32px 20px 64px; }
+  header { display:flex; align-items:center; gap:14px; margin-bottom:6px; }
+  header img { width:44px; height:44px; border-radius:10px; }
+  h1 { margin:0; font-size:28px; letter-spacing:-.02em; }
+  .sub { color:var(--muted); margin:0 0 22px; }
+  .glass { background:var(--card); border:1px solid var(--line); border-radius:16px; padding:18px;
+    backdrop-filter:blur(14px); -webkit-backdrop-filter:blur(14px); }
+  .row { display:flex; gap:10px; flex-wrap:wrap; align-items:center; }
+  input[type=text], input[type=password] { flex:1; min-width:200px; padding:12px 14px; border-radius:10px; font:inherit;
+    border:1px solid var(--line); background:rgba(0,0,0,.18); color:var(--text); }
+  input:focus { outline:2px solid var(--accent); outline-offset:1px; }
+  button, .btn { font:inherit; cursor:pointer; border:0; border-radius:10px; padding:10px 16px; color:#fff; text-decoration:none;
+    background:linear-gradient(135deg,var(--accent),var(--accent2)); display:inline-block; }
+  button:disabled { opacity:.55; cursor:progress; }
+  .btn.ghost, button.ghost { background:rgba(127,127,160,.22); color:var(--text); }
+  .btn.warn { background:var(--warn); color:#1a1200; }
+  .opts { margin-top:12px; color:var(--muted); font-size:14px; }
+  .opts label { display:inline-flex; align-items:center; gap:6px; margin-right:18px; }
+  #bar { height:3px; border-radius:3px; margin:16px 0 10px; overflow:hidden; background:transparent; }
+  #bar.on { background:var(--line); }
+  #bar.on::after { content:""; display:block; height:100%; width:35%; background:linear-gradient(90deg,var(--accent),var(--accent2));
+    animation:slide 1.1s ease-in-out infinite; }
+  @keyframes slide { from { transform:translateX(-100%); } to { transform:translateX(300%); } }
+  @media (prefers-reduced-motion: reduce) { #bar.on::after { animation:none; width:100%; } }
+  #log { height:130px; overflow:auto; font:12px/1.5 ui-monospace,Consolas,monospace; color:var(--muted); white-space:pre-wrap; }
+  h2 { font-size:16px; margin:22px 0 10px; }
+  .file { margin-bottom:12px; }
+  .file .name { font-weight:650; word-break:break-all; }
+  .meta { color:var(--muted); font-size:13px; margin:2px 0 10px; }
+  .badge { display:inline-block; padding:1px 8px; border-radius:99px; font-size:12px; border:1px solid var(--line); }
+  .badge.ok { color:var(--ok); } .badge.lock { color:var(--warn); }
+  iframe { width:100%; height:480px; border:1px solid var(--line); border-radius:10px; margin-top:12px; background:#fff; }
+  .err { color:var(--err); margin-top:10px; min-height:1.2em; }
+  .empty { color:var(--muted); }
+  [hidden] { display:none !important; }
+  dialog { width:min(520px,92vw); border:1px solid var(--line); border-radius:16px; padding:22px; color:var(--text);
+    background:var(--bg1); box-shadow:0 20px 60px rgba(0,0,0,.45); }
+  dialog::backdrop { background:rgba(0,0,0,.55); backdrop-filter:blur(4px); }
+  dialog h3 { margin:0 0 2px; font-size:20px; }
+  dialog label.l { display:block; margin:14px 0 4px; font-size:13px; color:var(--muted); }
+  dialog .row input { min-width:0; }
+  .hint { min-height:1.4em; margin-top:10px; font-size:13px; color:var(--muted); }
+  .hint.bad { color:var(--err); }
+  .saved { color:var(--ok); }
+</style>
+</head>
+<body>
+<main>
+  <header>
+    <img id="logo" src="/logo.png" alt="" onerror="this.remove()">
+    <h1 id="title">PDF Extractor</h1>
+  </header>
+  <p class="sub">Paste a page address. We load it in a server-side browser and pull out PDFs hidden in the page, blobs and network traffic.</p>
+
+  <section class="glass">
+    <div class="row">
+      <input id="token" type="password" placeholder="Access token" autocomplete="off" hidden>
+    </div>
+    <form id="form" class="row" style="margin-top:8px">
+      <input id="url" type="text" inputmode="url" placeholder="https://example.com/page-with-a-hidden-pdf" autofocus required>
+      <button id="go" type="submit">Extract</button>
+    </form>
+    <div class="opts">
+      <label><input id="deep" type="checkbox"> Deep mode (clicks download/view buttons)</label>
+      <label>Listen <input id="wait" type="range" min="3" max="20" value="6"> <span id="waitv">6</span>s</label>
+    </div>
+    <div class="err" id="err" role="alert"></div>
+    <div id="bar"></div>
+    <div id="log" aria-live="polite"></div>
+  </section>
+
+  <h2>Results</h2>
+  <div id="results"><p class="empty">Nothing yet.</p></div>
+  <p class="meta">Files are deleted automatically shortly after your session. Only extract documents you're permitted to access.</p>
+</main>
+
+<dialog id="saveDlg" aria-labelledby="saveTitle">
+  <h3 id="saveTitle">Save PDF</h3>
+  <div class="meta">Choose where it goes and what it's called.</div>
+
+  <div id="folderRow">
+    <label class="l">Folder</label>
+    <div class="row">
+      <input id="saveFolder" type="text" readonly placeholder="No folder chosen yet">
+      <button id="pickFolder" type="button" class="ghost">Choose folder&hellip;</button>
+    </div>
+  </div>
+  <div id="noFsa" class="meta" hidden>
+    Your browser can't pick a folder from a web page (Firefox / Safari). The file name you choose is used;
+    the browser decides the folder &mdash; turn on its &ldquo;Ask where to save each file&rdquo; setting to choose one.
+  </div>
+
+  <label class="l" for="saveName">File name (leave blank to use the default)</label>
+  <input id="saveName" type="text" maxlength="200" autocomplete="off" style="width:100%">
+  <div id="saveMsg" class="hint" role="alert"></div>
+
+  <div class="row" style="justify-content:flex-end;margin-top:14px">
+    <button id="saveCancel" type="button" class="ghost">Cancel</button>
+    <button id="keepBoth" type="button" class="ghost" hidden>Keep both</button>
+    <button id="saveOk" type="button">Save</button>
+  </div>
+</dialog>
+
+<script>
+const $ = s => document.querySelector(s);
+let token = sessionStorage.getItem('pdfx_token') || '';
+let jobId = null, source = null;
+
+// Build API URLs; the token also rides in the query string so <a>, <iframe> and EventSource work.
+const api = path => token ? `${path}${path.includes('?') ? '&' : '?'}token=${encodeURIComponent(token)}` : path;
+const hdrs = () => ({ 'Content-Type': 'application/json', ...(token ? { 'X-Access-Token': token } : {}) });
+const fmtSize = b => b > 1048576 ? (b / 1048576).toFixed(1) + ' MB' : Math.max(1, Math.round(b / 1024)) + ' KB';
+
+function log(msg) { const l = $('#log'); l.textContent += msg + '\n'; l.scrollTop = l.scrollHeight; }
+function fail(msg) { $('#err').textContent = msg || ''; }
+
+fetch('/api/config').then(r => r.json()).then(c => {
+  document.title = c.title; $('#title').textContent = c.title;
+  $('#wait').max = c.max_wait;
+  if (c.token_required) { $('#token').hidden = false; $('#token').value = token;
+    $('#token').addEventListener('input', e => { token = e.target.value; sessionStorage.setItem('pdfx_token', token); }); }
+});
+$('#wait').addEventListener('input', e => $('#waitv').textContent = e.target.value);
+
+$('#form').addEventListener('submit', async e => {
+  e.preventDefault(); fail('');
+  if (source) source.close();
+  $('#log').textContent = ''; $('#results').innerHTML = '<p class="empty">Working...</p>';
+  setBusy(true);
+  try {
+    const res = await fetch('/api/jobs', { method: 'POST', headers: hdrs(), body: JSON.stringify({
+      url: $('#url').value, deep: $('#deep').checked, wait: +$('#wait').value }) });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.detail || 'Request failed');
+    jobId = data.id; listen();
+  } catch (err) { fail(err.message); setBusy(false); $('#results').innerHTML = '<p class="empty">Nothing yet.</p>'; }
+});
+
+function setBusy(on) { $('#go').disabled = on; $('#go').textContent = on ? 'Working...' : 'Extract'; $('#bar').className = on ? 'on' : ''; }
+
+function listen() {
+  let count = 0;
+  source = new EventSource(api(`/api/jobs/${jobId}/events`));
+  source.onmessage = ev => {
+    const d = JSON.parse(ev.data);
+    if (d.type === 'log') log(d.message);
+    else if (d.type === 'result') { if (!count++) $('#results').innerHTML = ''; addFile(d.file); }
+    else if (d.type === 'done') {
+      source.close(); setBusy(false);
+      if (!count) $('#results').innerHTML = '<p class="empty">No PDFs found. Try Deep mode or a longer listen time.</p>';
+    }
+  };
+  source.onerror = () => { source.close(); setBusy(false); fail('Connection lost. Check the access token or try again.'); };
+}
+
+// ---------- file-name sanitising: mirrors sanitize_filename() in pdf_extractor.py (the server re-checks anyway)
+const ILLEGAL = /[<>:"\/\\|?*\u0000-\u001f]/g;
+const RESERVED = /^(con|prn|aux|nul|com[1-9]|lpt[1-9])$/i;
+function sanitizeName(raw, fallback) {
+  let n = (raw || '').replace(ILLEGAL, '_').replace(/\s+/g, ' ').trim().replace(/^[. ]+|[. ]+$/g, '');
+  if (!n) return fallback ? sanitizeName(fallback, '') || 'document.pdf' : 'document.pdf';
+  if (!/\.pdf$/i.test(n)) n += '.pdf';
+  let stem = n.slice(0, -4).replace(/[. ]+$/, '');
+  if (RESERVED.test(stem.split('.')[0])) stem = '_' + stem;
+  stem = stem.slice(0, 150).replace(/[. ]+$/, '') || 'document';
+  return stem + '.pdf';
+}
+
+// ---------- save dialog
+const fsa = typeof window.showDirectoryPicker === 'function';   // Chrome / Edge / Opera
+const dlg = $('#saveDlg'), nameIn = $('#saveName'), okBtn = $('#saveOk'), keepBtn = $('#keepBoth');
+let lastDir = null, saveCtx = null, conflict = false;
+$('#folderRow').hidden = !fsa; $('#noFsa').hidden = fsa;
+
+function setMsg(text, bad) { const m = $('#saveMsg'); m.textContent = text || ''; m.className = 'hint' + (bad ? ' bad' : ''); }
+function showFolder() { $('#saveFolder').value = lastDir ? lastDir.name : ''; }
+function resetConflict() { conflict = false; okBtn.textContent = 'Save'; keepBtn.hidden = true; }
+function preview() {
+  const raw = nameIn.value, final = sanitizeName(raw, saveCtx.f.suggested_name);
+  if (!raw.trim()) setMsg(`Blank - will be saved as: ${final}`);
+  else if (final !== raw) setMsg(`Will be saved as: ${final}  (illegal characters replaced / .pdf added)`);
+  else setMsg('');
+}
+const friendly = e => e.name === 'NotAllowedError' ? "The browser doesn't have permission to write to that folder. Choose another one."
+  : e.name === 'TypeError' ? "That file name isn't allowed." : (e.message || 'Could not save the file.');
+
+async function pickFolder() {
+  try { lastDir = await window.showDirectoryPicker({ mode: 'readwrite', id: 'pdfx', startIn: 'downloads' }); showFolder(); resetConflict(); return true; }
+  catch (e) { if (e.name !== 'AbortError') setMsg(`That folder can't be used (browsers block system folders): ${e.message}`, true); return false; }
+}
+async function fileExists(dir, name) {
+  try { await dir.getFileHandle(name); return true; } catch (e) { if (e.name === 'NotFoundError') return false; throw e; }
+}
+async function freeName(dir, name) {
+  const stem = name.slice(0, -4); let n = 1, cand;
+  do { cand = `${stem} (${n++}).pdf`; } while (await fileExists(dir, cand));
+  return cand;
+}
+async function writeNow(finalName) {
+  try {
+    if ((await lastDir.queryPermission({ mode: 'readwrite' })) !== 'granted') await lastDir.requestPermission({ mode: 'readwrite' });
+    const fh = await lastDir.getFileHandle(finalName, { create: true });
+    const w = await fh.createWritable();
+    const resp = await fetch(api(`${saveCtx.base}/view`));      // stream the staged PDF straight into the chosen folder
+    if (!resp.ok) { await w.abort(); throw new Error('Could not fetch the file from the server.'); }
+    await resp.body.pipeTo(w);
+    dlg.close(); saveCtx.done({ handle: fh, name: finalName, folder: lastDir.name });
+  } catch (e) { setMsg(friendly(e), true); }
+}
+
+function openSaveDialog(f, base, done) {
+  saveCtx = { f, base, done }; nameIn.value = f.suggested_name || f.name;
+  resetConflict(); showFolder(); preview(); dlg.showModal();
+  nameIn.focus(); nameIn.setSelectionRange(0, Math.max(0, nameIn.value.length - 4));
+}
+nameIn.addEventListener('input', () => { resetConflict(); preview(); });
+$('#pickFolder').onclick = pickFolder;
+$('#saveCancel').onclick = () => dlg.close();
+nameIn.addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); okBtn.click(); } });
+
+okBtn.onclick = async () => {
+  const name = sanitizeName(nameIn.value, saveCtx.f.suggested_name);
+  if (!fsa) {                                   // no folder API: browser download with the chosen (sanitised) name
+    const a = Object.assign(document.createElement('a'), { href: api(`${saveCtx.base}/download?name=${encodeURIComponent(name)}`), download: name });
+    document.body.append(a); a.click(); a.remove();
+    dlg.close(); saveCtx.done({ name }); return;
+  }
+  if (!lastDir && !(await pickFolder())) return;
+  try {
+    if (await fileExists(lastDir, name) && !conflict) {         // never overwrite silently
+      conflict = true; okBtn.textContent = 'Overwrite'; keepBtn.hidden = false;
+      return setMsg(`"${name}" already exists in "${lastDir.name}". Overwrite it, or keep both.`, true);
+    }
+    await writeNow(name);
+  } catch (e) { setMsg(friendly(e), true); }
+};
+keepBtn.onclick = async () => { try { await writeNow(await freeName(lastDir, sanitizeName(nameIn.value, saveCtx.f.suggested_name))); } catch (e) { setMsg(friendly(e), true); } };
+
+// ---------- result cards
+function addFile(f) {
+  const el = document.createElement('div'); el.className = 'glass file';
+  const base = `/api/jobs/${jobId}/files/${f.id}`;
+  const name = document.createElement('div'); name.className = 'name'; name.textContent = f.suggested_name || f.name;
+  const meta = document.createElement('div'); meta.className = 'meta';
+  const badge = document.createElement('span');
+  const paint = () => {
+    badge.className = 'badge ' + (f.locked ? 'lock' : 'ok'); badge.textContent = f.locked ? 'password required' : f.status;
+    meta.textContent = `${fmtSize(f.size)} · ${f.pages ?? '?'} pages · found via ${f.source} `; meta.append(badge);
+  };
+  paint();
+  const saved = document.createElement('div'); saved.className = 'meta saved'; saved.hidden = true;
+
+  const actions = document.createElement('div'); actions.className = 'row';
+  const sv = Object.assign(document.createElement('button'), { type: 'button', textContent: 'Save as…' });
+  const vw = Object.assign(document.createElement('a'), { className: 'btn ghost', textContent: 'View', target: '_blank', rel: 'noopener' });
+  const pv = Object.assign(document.createElement('button'), { className: 'ghost', type: 'button', textContent: 'Preview here' });
+  const os = Object.assign(document.createElement('button'), { className: 'ghost', type: 'button', textContent: 'Open saved file', hidden: true });
+  const setLinks = () => { vw.href = api(`${base}/view`); };
+  setLinks();
+
+  let savedHandle = null, frame = null;
+  sv.onclick = () => openSaveDialog(f, base, r => {
+    saved.hidden = false;
+    if (r.handle) {
+      savedHandle = r.handle; saved.textContent = `Saved to ${r.folder}/${r.name}`; os.hidden = false; sv.textContent = 'Save another copy…';
+    } else {
+      saved.textContent = `Download started as “${r.name}” — check your browser's downloads.`;
+    }
+  });
+  os.onclick = async () => {                    // verify the file that was actually written to disk
+    try {
+      const file = await savedHandle.getFile();
+      const url = URL.createObjectURL(new File([file], file.name, { type: 'application/pdf' }));
+      window.open(url, '_blank', 'noopener'); setTimeout(() => URL.revokeObjectURL(url), 300000);
+    } catch (e) { fail('Could not open the saved file: ' + e.message); }
+  };
+  pv.onclick = () => { if (frame) { frame.remove(); frame = null; return; }
+    frame = Object.assign(document.createElement('iframe'), { src: api(`${base}/view`), title: 'Preview of ' + f.name }); el.append(frame); };
+  actions.append(sv, vw, pv, os);
+
+  if (f.locked) {                       // user-supplied password only; no guessing
+    const pw = Object.assign(document.createElement('input'), { type: 'password', placeholder: 'PDF password' });
+    const ub = Object.assign(document.createElement('button'), { className: 'btn warn', type: 'button', textContent: 'Unlock' });
+    ub.onclick = async () => {
+      const r = await fetch(`${base}/unlock`, { method: 'POST', headers: hdrs(), body: JSON.stringify({ password: pw.value }) });
+      const d = await r.json();
+      if (!r.ok) return fail(d.detail || 'Unlock failed');
+      fail(''); Object.assign(f, d); name.textContent = f.suggested_name; paint(); setLinks(); pw.remove(); ub.remove();
+    };
+    actions.append(pw, ub);
+  }
+  el.append(name, meta, saved, actions); $('#results').append(el);
+}
+</script>
+</body>
+</html>
