@@ -1,0 +1,14 @@
+# Render.com blueprint: New > Blueprint > pick this repo.
+services:
+  - type: web
+    name: pdf-extractor
+    runtime: docker
+    plan: standard            # Chromium needs ~1-2 GB RAM; 512 MB plans will be OOM-killed
+    healthCheckPath: /healthz
+    envVars:
+      - key: ACCESS_TOKEN
+        generateValue: true   # find it under Environment, then share it with your users
+      - key: TRUST_PROXY
+        value: "1"
+      - key: APP_TITLE
+        value: PDF Extractor
